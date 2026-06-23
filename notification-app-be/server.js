@@ -51,13 +51,7 @@ const notifications = [
 ];
 
 app.get("/", async (req, res) => {
-  await mylog(
-    "backend",
-    "info",
-    "route",
-    "GET / called"
-  );
-
+  await mylog("backend", "info", "route", "GET / called");
   res.send("Server Running!");
 });
 
@@ -70,6 +64,13 @@ app.get("/api/notifications", async (req, res) => {
     "route",
     `GET /api/notifications called - page: ${page}, limit: ${limit}, filter: ${filter}`
   );
+
+  // Validate filter input
+  const validFilters = ["All", "Placement", "Result", "Event"];
+  if (filter && !validFilters.includes(filter)) {
+    await mylog("backend", "error", "handler", "Invalid request");
+    return res.status(400).json({ error: "Invalid filter type" });
+  }
 
   let filtered = notifications;
   if (filter && filter !== "All") {
@@ -94,12 +95,6 @@ app.get("/api/notifications", async (req, res) => {
 });
 
 app.listen(3000, async () => {
-  await mylog(
-    "backend",
-    "info",
-    "service",
-    "Server started on the port 3000"
-  );
-
+  await mylog("backend", "info", "service", "Server started");
   console.log("Server running on port 3000!");
 });

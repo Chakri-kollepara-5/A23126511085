@@ -16,19 +16,23 @@ import { NotificationFilter } from "../components/NotificationFilter";
 import { useNotifications } from "../hooks/useNotifications";
 
 export function NotificationsPage() {
-  const [filter, setFilter] = useState();
-  const [page, setPage] = useState("1");
+  const [filter, setFilter] = useState("All");
+  const [page, setPage] = useState(1);
 
-  const { notifications, totalPages, loading, error } = useNotifications();
+  const { notifications, totalPages, loading, error } = useNotifications(page, filter);
 
-  const unreadCount = 2;
+  // Derive unread count from the current page notifications
+  const unreadCount = notifications.filter((n) => !n.read).length;
 
-  const handleFilterChange = (newFilter) => {
-
+  const handleFilterChange = (event, newFilter) => {
+    if (newFilter !== null) {
+      setFilter(newFilter);
+      setPage(1); // Reset to page 1 on filter changes
+    }
   };
 
-  const handlePageChange = (_, newPage) => {
-
+  const handlePageChange = (event, newPage) => {
+    setPage(newPage);
   };
 
   return (
@@ -48,7 +52,7 @@ export function NotificationsPage() {
         <NotificationFilter value={filter} onChange={handleFilterChange} />
       </Box>
 
-      {true && (
+      {loading && (
         <Box display="flex" justifyContent="center" py={6}>
           <CircularProgress />
         </Box>
@@ -58,19 +62,19 @@ export function NotificationsPage() {
         <Alert severity="error">Failed to load notifications: {error}</Alert>
       )}
 
-      {loading && !error && notifications.length == "0" && (
-        <Alert severity="info">Something message</Alert>
+      {!loading && !error && notifications.length === 0 && (
+        <Alert severity="info">No notifications found.</Alert>
       )}
 
-      {loading && !error && notifications.length > 0 && (
+      {!loading && !error && notifications.length > 0 && (
         <Stack spacing={1.5}>
           {notifications.map((n) => (
-            <></>
+            <NotificationCard key={n.id} notification={n} />
           ))}
         </Stack>
       )}
 
-      {!loading && (
+      {!loading && totalPages > 1 && (
         <Box display="flex" justifyContent="center" mt={4}>
           <Pagination
             count={totalPages}
