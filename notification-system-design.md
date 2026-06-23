@@ -269,6 +269,8 @@ Redis Cache (Checks for cached notifications)
 Database
 ```
 
+- **Cache-Aside Pattern**: On notification query, the server first checks Redis. If the data exists (Cache Hit), it returns it immediately. If not (Cache Miss), it fetches from PostgreSQL, populates the Redis cache (with an appropriate TTL like 15 minutes), and returns the payload.
+- **Cache Invalidation**: When a new notification is created for a user, the corresponding cached notifications index in Redis is cleared or appended to keep the client feed synchronized.
 
 ### 2. Pagination
 Instead of loading a student's entire notification history, feeds are paginated using limit and offset queries to reduce payload sizes and database read times.
@@ -276,7 +278,59 @@ Instead of loading a student's entire notification history, feeds are paginated 
 
 ### 3. Lazy Loading & Infinite Scroll
 - On the frontend client, we only fetch the first 20 records.
+- As the user scrolls near the bottom of the viewport, the next page is requested and appended to the UI state. This prevents loading records that the user may never view.
 
 ### 4. Background Refresh & Optimistic UI Updates
 - **Background Refresh**: The frontend queries cached records instantly for immediate rendering, then fetches updates in the background to update the feed without blocking user interactions.
+- **Real-Time Synchronicity**: WebSockets push new notifications directly to the browser. Instead of reloading the page or making a full REST API call, the new item is pushed onto the active frontend list state.
+
+---
+
+# Stage 5 — Asynchronous Processing & Fault Tolerance
+
+## Shortcomings of Current Implementation
+The current implementation processes notifications sequentially:
+
+```python
+for student_id in student_ids:
+    send_email(student_id, message)
+    save_to_db(student_id, message)
+    push_to_app(student_id, message)
+```
+
+### Issues:
+1. **Single Point of Failure**: If `send_email()` fails or throws an exception, the entire loop terminates, halting delivery for remaining students.
+2. **No Retry Logic**: Transient network or SMTP errors result in permanent notification delivery loss.
+
+
+---
+
+## Proposed Solution: Queue-Based Architecture
+To decouple components, notifications are offloaded to an asynchronous message queue (e.g., RabbitMQ or Redis BullMQ).
+
+```
+HR 
+ ↓ 
+Notification API 
+ ↓ 
+Message Queue 
+ ↓ 
+Worker Service 
+ ├── Save Notification to DB 
+ ├── Send Email 
+ └── Send In-App Notification (WebSocket)
+```
+
+---
+
+
+
+## Revised Pseudocode
+
+### Enqueue Process
+```python
+for student_id in student_ids:
+    add_to_queue(student_id, message)
+```
+
 
