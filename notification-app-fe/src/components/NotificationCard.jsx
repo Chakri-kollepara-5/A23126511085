@@ -3,12 +3,38 @@ import WorkIcon from "@mui/icons-material/Work";
 import AssessmentIcon from "@mui/icons-material/Assessment";
 import EventIcon from "@mui/icons-material/Event";
 import FiberNewIcon from "@mui/icons-material/FiberNew";
+import SpeedIcon from "@mui/icons-material/Speed";
 
 export function NotificationCard({ notification }) {
-  const { title, content, type, date, read } = notification;
+  const {
+    title,
+    content,
+    message,
+    text,
+    type,
+    category,
+    date,
+    created_at,
+    createdAt,
+    read,
+    isRead,
+    is_read,
+    priorityScore
+  } = notification;
+
+  const displayTitle = title || "No Title";
+  const displayContent = content || message || text || "";
+  const displayType = type || category || "Event";
+  const displayDate = created_at || date || createdAt || new Date().toISOString();
+  
+  const isNotificationRead = read !== undefined 
+    ? read 
+    : (isRead !== undefined 
+      ? isRead 
+      : (is_read !== undefined ? is_read : true));
 
   const getTypeIcon = () => {
-    switch (type) {
+    switch (displayType) {
       case "Placement":
         return <WorkIcon fontSize="small" sx={{ color: "success.main" }} />;
       case "Result":
@@ -21,7 +47,7 @@ export function NotificationCard({ notification }) {
   };
 
   const getTypeColor = () => {
-    switch (type) {
+    switch (displayType) {
       case "Placement":
         return "success";
       case "Result":
@@ -33,7 +59,7 @@ export function NotificationCard({ notification }) {
     }
   };
 
-  const formattedDate = new Date(date).toLocaleString("en-US", {
+  const formattedDate = new Date(displayDate).toLocaleString("en-US", {
     month: "short",
     day: "numeric",
     hour: "2-digit",
@@ -45,10 +71,10 @@ export function NotificationCard({ notification }) {
       variant="outlined"
       sx={{
         borderRadius: 2,
-        borderColor: read ? "divider" : "primary.light",
-        borderWidth: read ? 1 : 1.5,
-        backgroundColor: read ? "background.paper" : "action.hover",
-        boxShadow: read ? "none" : "0 2px 8px rgba(25, 118, 210, 0.08)",
+        borderColor: isNotificationRead ? "divider" : "primary.light",
+        borderWidth: isNotificationRead ? 1 : 1.5,
+        backgroundColor: isNotificationRead ? "background.paper" : "action.hover",
+        boxShadow: isNotificationRead ? "none" : "0 2px 8px rgba(25, 118, 210, 0.08)",
         transition: "all 0.2s ease-in-out",
         "&:hover": {
           boxShadow: "0 4px 12px rgba(0, 0, 0, 0.05)",
@@ -63,7 +89,7 @@ export function NotificationCard({ notification }) {
               sx={{
                 p: 1,
                 borderRadius: "50%",
-                backgroundColor: read ? "action.selected" : "primary.light",
+                backgroundColor: isNotificationRead ? "action.selected" : "primary.light",
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
@@ -74,29 +100,46 @@ export function NotificationCard({ notification }) {
             <Box>
               <Typography
                 variant="subtitle1"
-                fontWeight={read ? 600 : 700}
+                fontWeight={isNotificationRead ? 600 : 700}
                 color="text.primary"
                 component="div"
               >
-                {title}
+                {displayTitle}
               </Typography>
               <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-                {content}
+                {displayContent}
               </Typography>
             </Box>
           </Box>
           <Box display="flex" flexDirection="column" alignItems="flex-end" gap={1}>
-            <Chip
-              label={type}
-              size="small"
-              color={getTypeColor()}
-              variant={read ? "outlined" : "filled"}
-              sx={{ fontWeight: 600, fontSize: "0.75rem" }}
-            />
+            <Box display="flex" gap={0.5} alignItems="center">
+              {priorityScore !== undefined && (
+                <Chip
+                  icon={<SpeedIcon style={{ fontSize: 14 }} />}
+                  label={`Score: ${priorityScore.toFixed(1)}`}
+                  size="small"
+                  variant="outlined"
+                  color="secondary"
+                  sx={{
+                    height: 20,
+                    fontWeight: 700,
+                    fontSize: "0.7rem",
+                    "& .MuiChip-icon": { ml: 0.5, mr: -0.2 }
+                  }}
+                />
+              )}
+              <Chip
+                label={displayType}
+                size="small"
+                color={getTypeColor()}
+                variant={isNotificationRead ? "outlined" : "filled"}
+                sx={{ fontWeight: 600, fontSize: "0.75rem", height: 20 }}
+              />
+            </Box>
             <Typography variant="caption" color="text.disabled" sx={{ whiteSpace: "nowrap" }}>
               {formattedDate}
             </Typography>
-            {!read && (
+            {!isNotificationRead && (
               <Chip
                 icon={<FiberNewIcon />}
                 label="New"

@@ -5,7 +5,10 @@ import {
   Box,
   CircularProgress,
   Divider,
-  Pagination,
+  FormControl,
+  InputLabel,
+  MenuItem,
+  Select,
   Stack,
   Typography,
 } from "@mui/material";
@@ -17,33 +20,57 @@ import { useNotifications } from "../hooks/useNotifications";
 
 export function NotificationsPage() {
   const [filter, setFilter] = useState("All");
-  const [page, setPage] = useState(1);
+  const [topN, setTopN] = useState("All");
 
-  const { notifications, totalPages, loading, error } = useNotifications(page, filter);
+  const { notifications, loading, error } = useNotifications(topN, filter);
 
-  // Derive unread count from the current page notifications
-  const unreadCount = notifications.filter((n) => !n.read).length;
+  // Derive unread count dynamically
+  const unreadCount = notifications.filter((n) => {
+    const read = n.read !== undefined 
+      ? n.read 
+      : (n.isRead !== undefined 
+        ? n.isRead 
+        : (n.is_read !== undefined ? n.is_read : true));
+    return !read;
+  }).length;
 
   const handleFilterChange = (event, newFilter) => {
     if (newFilter !== null) {
       setFilter(newFilter);
-      setPage(1); // Reset to page 1 on filter changes
     }
   };
 
-  const handlePageChange = (event, newPage) => {
-    setPage(newPage);
+  const handleTopNChange = (event) => {
+    setTopN(event.target.value);
   };
 
   return (
     <Box sx={{ maxWidth: 720, mx: "auto", px: 2, py: 4 }}>
-      <Stack direction="row" alignItems="center" spacing={1.5} mb={3}>
-        <Badge badgeContent={unreadCount} color="primary" max={99}>
-          <NotificationsIcon sx={{ fontSize: 28 }} />
-        </Badge>
-        <Typography variant="h5" fontWeight={700}>
-          Notifications
-        </Typography>
+      <Stack direction="row" justifyContent="space-between" alignItems="center" mb={3}>
+        <Stack direction="row" alignItems="center" spacing={1.5}>
+          <Badge badgeContent={unreadCount} color="primary" max={99}>
+            <NotificationsIcon sx={{ fontSize: 28 }} />
+          </Badge>
+          <Typography variant="h5" fontWeight={700}>
+            Notifications
+          </Typography>
+        </Stack>
+
+        <FormControl size="small" sx={{ minWidth: 120 }}>
+          <InputLabel id="top-n-select-label">Top N</InputLabel>
+          <Select
+            labelId="top-n-select-label"
+            id="top-n-select"
+            value={topN}
+            label="Top N"
+            onChange={handleTopNChange}
+          >
+            <MenuItem value="All">All Items</MenuItem>
+            <MenuItem value="3">Top 3</MenuItem>
+            <MenuItem value="5">Top 5</MenuItem>
+            <MenuItem value="10">Top 10</MenuItem>
+          </Select>
+        </FormControl>
       </Stack>
 
       <Divider sx={{ mb: 3 }} />
@@ -68,22 +95,10 @@ export function NotificationsPage() {
 
       {!loading && !error && notifications.length > 0 && (
         <Stack spacing={1.5}>
-          {notifications.map((n) => (
-            <NotificationCard key={n.id} notification={n} />
+          {notifications.map((n, idx) => (
+            <NotificationCard key={n.id || n.notificationId || idx} notification={n} />
           ))}
         </Stack>
-      )}
-
-      {!loading && totalPages > 1 && (
-        <Box display="flex" justifyContent="center" mt={4}>
-          <Pagination
-            count={totalPages}
-            page={page}
-            onChange={handlePageChange}
-            color="primary"
-            shape="rounded"
-          />
-        </Box>
       )}
     </Box>
   );
