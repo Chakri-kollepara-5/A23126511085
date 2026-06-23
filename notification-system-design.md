@@ -214,6 +214,10 @@ AND isRead = false
 ORDER BY createdAt ASC;
 ```
 
+### The Bottleneck
+- **Full Table Scan**: Without an appropriate index, PostgreSQL must perform a sequential scan across the entire table to filter by `studentID` and `isRead`.
+- **5 Million Notifications**: Scanning a table of this scale results in high disk I/O, heavy CPU usage, and high latency.
+- **Slow Sorting**: Sorting the filtered results by `createdAt` forces an in-memory or disk-based sort (external merge sort) if the volume of unread notifications is large, further degrading query response times.
 
 ---
 
@@ -225,6 +229,13 @@ CREATE INDEX idx_notifications_student_read_created
 ON notifications(studentID, isRead, createdAt);
 ```
 
+### Why not index every column?
+While indexes speed up lookups, indexing every column is a bad practice due to:
+- **Higher Storage Overhead**: Indexes occupy significant physical disk space, sometimes exceeding the size of the raw table data itself.
+- **Slower INSERTs**: Every new row insertion requires the database engine to recalculate and write entries into every index defined on the table.
+- **Slower UPDATEs**: Modifying a value in an indexed column forces the engine to remove the old index entry and write a new one, causing index fragmentation and page splits.
+
+---
 
 ## Placement Notifications (Last 7 Days)
 To query only placement notifications from the last week:
@@ -235,3 +246,37 @@ FROM notifications
 WHERE notificationType = 'Placement'
 AND createdAt >= NOW() - INTERVAL '7 days';
 ```
+
+---
+
+# Stage 4 — Performance Improvement
+
+## Problem: Redundant Database Lookups
+Currently, every page load triggers direct reads to the database. At scale, this results in high database CPU utilization, connection pool exhaustion, and increased read latency for users.
+
+---
+
+## Solutions
+
+### 1. Redis Cache Layer
+To offload queries from the primary database, a caching layer is introduced. 
+
+```
+Frontend 
+   ↓ 
+Redis Cache (Checks for cached notifications)
+   ↓ (If Cache Miss)
+Database
+```
+
+
+### 2. Pagination
+Instead of loading a student's entire notification history, feeds are paginated using limit and offset queries to reduce payload sizes and database read times.
+- **Endpoint Pattern**: `GET /api/v1/notifications?page=1&limit=20`
+
+### 3. Lazy Loading & Infinite Scroll
+- On the frontend client, we only fetch the first 20 records.
+
+### 4. Background Refresh & Optimistic UI Updates
+- **Background Refresh**: The frontend queries cached records instantly for immediate rendering, then fetches updates in the background to update the feed without blocking user interactions.
+
