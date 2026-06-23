@@ -43,8 +43,8 @@ const staticMockNotifications = [
   }
 ];
 
-export async function fetchNotifications() {
-  // 1. Try fetching from the external evaluation service
+// Fetch from evaluation service (or fallback)
+export async function fetchEvaluationNotifications() {
   try {
     const url = "http://4.224.186.213/evaluation-service/notifications";
     const response = await fetch(url, {
@@ -55,23 +55,37 @@ export async function fetchNotifications() {
     if (response.ok) {
       return await response.json();
     }
-    console.warn(`Evaluation service returned status ${response.status}. Falling back to local backend.`);
   } catch (err) {
-    console.warn("Failed to reach evaluation service. Falling back to local backend.", err);
+    console.warn("Failed to reach evaluation service. Falling back to static mock data.", err);
   }
+  return { notifications: staticMockNotifications };
+}
 
-  // 2. Try fetching from the local backend service
+// Fetch from local backend (or fallback)
+export async function fetchLocalNotifications(page = 1, filter = "All") {
   try {
-    const localUrl = "http://localhost:3000/api/notifications?limit=100";
-    const localResponse = await fetch(localUrl);
-    if (localResponse.ok) {
-      return await localResponse.json();
+    const url = `http://localhost:3000/api/notifications?page=${page}&filter=${filter}&limit=2`;
+    const response = await fetch(url);
+    if (response.ok) {
+      return await response.json();
     }
-    console.warn(`Local backend returned status ${localResponse.status}. Falling back to static mock data.`);
   } catch (err) {
     console.warn("Failed to reach local backend. Falling back to static mock data.", err);
   }
 
-  // 3. Resilient final fallback to local static data
-  return { notifications: staticMockNotifications };
+  // Client-side pagination fallback for static mock data
+  let filtered = staticMockNotifications;
+  if (filter && filter !== "All") {
+    filtered = staticMockNotifications.filter(
+      (n) => n.type.toLowerCase() === filter.toLowerCase()
+    );
+  }
+  const limit = 2;
+  const startIndex = (page - 1) * limit;
+  const endIndex = page * limit;
+  return {
+    notifications: filtered.slice(startIndex, endIndex),
+    totalPages: Math.ceil(filtered.length / limit),
+    total: filtered.length
+  };
 }

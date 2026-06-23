@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { fetchNotifications } from "../api/notifications";
+import { fetchEvaluationNotifications, fetchLocalNotifications } from "../api/notifications";
 
 const TYPE_WEIGHTS = {
   Placement: 100,
@@ -20,35 +20,61 @@ function calculatePriorityScore(notification) {
   const now = Date.now();
   const ageInHours = Math.max(0, (now - createdTime) / (1000 * 60 * 60));
 
-  // Recency score starts at 100 and drops by 1 point per hour down to a minimum of 0
   const recencyScore = Math.max(0, 100 - ageInHours);
-
   return weight + recencyScore;
 }
 
-export function useNotifications(topN = "All", filter = "All") {
-  const [rawNotifications, setRawNotifications] = useState([]);
+export function useNotifications(mode = "all", page = 1, filter = "All", topN = "All") {
   const [notifications, setNotifications] = useState([]);
+  const [totalPages, setTotalPages] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
   useEffect(() => {
     let isMounted = true;
-    
+
     const load = async () => {
       setLoading(true);
       setError(null);
       try {
-        const data = await fetchNotifications();
-        let items = [];
-        if (Array.isArray(data)) {
-          items = data;
-        } else if (data && Array.isArray(data.notifications)) {
-          items = data.notifications;
-        }
-        
-        if (isMounted) {
-          setRawNotifications(items);
+        if (mode === "priority") {
+          // Priority Mode: Fetch all evaluation notifications, score, filter, sort, and slice
+          const data = await fetchEvaluationNotifications();
+          let items = Array.isArray(data) ? data : (data?.notifications || []);
+          
+          let processed = items.map((n) => ({
+            ...n,
+            priorityScore: calculatePriorityScore(n)
+          }));
+
+          if (filter !== "All") {
+            processed = processed.filter(
+              (n) => (n.type || n.category || "").toLowerCase() === filter.toLowerCase()
+            );
+          }
+
+          // Sort by score (descending)
+          processed.sort((a, b) => b.priorityScore - a.priorityScore);
+
+          // Slice Top N
+          if (topN !== "All") {
+            const limit = parseInt(topN, 10);
+            if (!isNaN(limit)) {
+              processed = processed.slice(0, limit);
+            }
+          }
+
+          if (isMounted) {
+            setNotifications(processed);
+            setTotalPages(1); // No pagination pages needed for top priority list
+          }
+        } else {
+          // Standard Mode: Fetch paginated items from local backend/fallback
+          const data = await fetchLocalNotifications(page, filter);
+          if (isMounted) {
+            setNotifications(data.notifications || []);
+            setTotalPages(data.totalPages || 0);
+          }
         }
       } catch (err) {
         if (isMounted) {
@@ -66,35 +92,7 @@ export function useNotifications(topN = "All", filter = "All") {
     return () => {
       isMounted = false;
     };
-  }, []);
+  }, [mode, page, filter, topN]);
 
-  useEffect(() => {
-    // Process priority scores
-    let processed = rawNotifications.map((n) => ({
-      ...n,
-      priorityScore: calculatePriorityScore(n)
-    }));
-
-    // Filter by type
-    if (filter !== "All") {
-      processed = processed.filter(
-        (n) => (n.type || n.category || "").toLowerCase() === filter.toLowerCase()
-      );
-    }
-
-    // Sort by Priority Score descending
-    processed.sort((a, b) => b.priorityScore - a.priorityScore);
-
-    // Limit to Top N
-    if (topN !== "All") {
-      const limit = parseInt(topN, 10);
-      if (!isNaN(limit)) {
-        processed = processed.slice(0, limit);
-      }
-    }
-
-    setNotifications(processed);
-  }, [rawNotifications, topN, filter]);
-
-  return { notifications, loading, error };
+  return { notifications, totalPages, loading, error };
 }

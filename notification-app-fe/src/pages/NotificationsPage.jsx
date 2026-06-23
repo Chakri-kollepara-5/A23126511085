@@ -10,7 +10,10 @@ import {
   MenuItem,
   Select,
   Stack,
+  Tab,
+  Tabs,
   Typography,
+  Pagination,
 } from "@mui/material";
 import NotificationsIcon from "@mui/icons-material/Notifications";
 
@@ -19,10 +22,13 @@ import { NotificationFilter } from "../components/NotificationFilter";
 import { useNotifications } from "../hooks/useNotifications";
 
 export function NotificationsPage() {
+  const [currentTab, setCurrentTab] = useState(0); // 0 = All Notifications, 1 = Priority Feed
   const [filter, setFilter] = useState("All");
+  const [page, setPage] = useState(1);
   const [topN, setTopN] = useState("All");
 
-  const { notifications, loading, error } = useNotifications(topN, filter);
+  const mode = currentTab === 0 ? "all" : "priority";
+  const { notifications, totalPages, loading, error } = useNotifications(mode, page, filter, topN);
 
   // Derive unread count dynamically
   const unreadCount = notifications.filter((n) => {
@@ -34,10 +40,22 @@ export function NotificationsPage() {
     return !read;
   }).length;
 
+  const handleTabChange = (event, newValue) => {
+    setCurrentTab(newValue);
+    setFilter("All");
+    setPage(1);
+    setTopN("All");
+  };
+
   const handleFilterChange = (event, newFilter) => {
     if (newFilter !== null) {
       setFilter(newFilter);
+      setPage(1);
     }
+  };
+
+  const handlePageChange = (event, newPage) => {
+    setPage(newPage);
   };
 
   const handleTopNChange = (event) => {
@@ -46,34 +64,44 @@ export function NotificationsPage() {
 
   return (
     <Box sx={{ maxWidth: 720, mx: "auto", px: 2, py: 4 }}>
-      <Stack direction="row" justifyContent="space-between" alignItems="center" mb={3}>
+      <Stack direction="row" justifyContent="space-between" alignItems="center" mb={2}>
         <Stack direction="row" alignItems="center" spacing={1.5}>
           <Badge badgeContent={unreadCount} color="primary" max={99}>
             <NotificationsIcon sx={{ fontSize: 28 }} />
           </Badge>
           <Typography variant="h5" fontWeight={700}>
-            Notifications
+            Notifications Portal
           </Typography>
         </Stack>
 
-        <FormControl size="small" sx={{ minWidth: 120 }}>
-          <InputLabel id="top-n-select-label">Top N</InputLabel>
-          <Select
-            labelId="top-n-select-label"
-            id="top-n-select"
-            value={topN}
-            label="Top N"
-            onChange={handleTopNChange}
-          >
-            <MenuItem value="All">All Items</MenuItem>
-            <MenuItem value="3">Top 3</MenuItem>
-            <MenuItem value="5">Top 5</MenuItem>
-            <MenuItem value="10">Top 10</MenuItem>
-          </Select>
-        </FormControl>
+        {currentTab === 1 && (
+          <FormControl size="small" sx={{ minWidth: 120 }}>
+            <InputLabel id="top-n-select-label">Top N</InputLabel>
+            <Select
+              labelId="top-n-select-label"
+              id="top-n-select"
+              value={topN}
+              label="Top N"
+              onChange={handleTopNChange}
+            >
+              <MenuItem value="All">All Items</MenuItem>
+              <MenuItem value="3">Top 3</MenuItem>
+              <MenuItem value="5">Top 5</MenuItem>
+              <MenuItem value="10">Top 10</MenuItem>
+            </Select>
+          </FormControl>
+        )}
       </Stack>
 
-      <Divider sx={{ mb: 3 }} />
+      <Tabs 
+        value={currentTab} 
+        onChange={handleTabChange} 
+        variant="fullWidth" 
+        sx={{ mb: 3, borderBottom: 1, borderColor: "divider" }}
+      >
+        <Tab label="All Notifications" sx={{ fontWeight: 600 }} />
+        <Tab label="Priority Feed" sx={{ fontWeight: 600 }} />
+      </Tabs>
 
       <Box sx={{ marginBottom: 3 }}>
         <NotificationFilter value={filter} onChange={handleFilterChange} />
@@ -99,6 +127,18 @@ export function NotificationsPage() {
             <NotificationCard key={n.id || n.notificationId || idx} notification={n} />
           ))}
         </Stack>
+      )}
+
+      {!loading && currentTab === 0 && totalPages > 1 && (
+        <Box display="flex" justifyContent="center" mt={4}>
+          <Pagination
+            count={totalPages}
+            page={page}
+            onChange={handlePageChange}
+            color="primary"
+            shape="rounded"
+          />
+        </Box>
       )}
     </Box>
   );
