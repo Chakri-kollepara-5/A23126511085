@@ -1,14 +1,21 @@
-# Stage 1
+# Notification System Design
 
-## Authentication
+## Stage 1: API Design
 
+### Authentication
+
+All APIs require a JWT token.
+
+```
 Authorization: Bearer <token>
+```
 
-## Create Notification
+### Create Notification
 
-POST /api/v1/notifications
+**POST** `/api/notifications`
 
 Request:
+
 ```json
 {
   "userId": "123",
@@ -19,318 +26,335 @@ Request:
 ```
 
 Response:
+
 ```json
 {
   "success": true,
-  "notificationId": "notif_001"
+  "notificationId": "001"
 }
 ```
 
-## Get Notifications
+---
 
-GET /api/v1/notifications
+### Get Notifications
 
-Request parameters (Query):
-- `page` (optional): Page number (e.g. `1`)
-- `limit` (optional): Number of items per page (e.g. `10`)
-- `filter` (optional): Filter type (e.g. `Placement`, `Result`, `Event`)
+**GET** `/api/notifications`
+
+Query Parameters:
+
+* page
+* limit
+* type
+
+Example:
+
+```
+/api/notifications?page=1&limit=10&type=Placement
+```
 
 Response:
+
 ```json
 {
-  "notifications": [
-    {
-      "id": "notif_001",
-      "userId": "123",
-      "title": "Placement Update",
-      "message": "Congratulations!",
-      "type": "Placement",
-      "read": false,
-      "createdAt": "2026-06-23T10:00:00Z"
-    }
-  ],
-  "totalPages": 1,
-  "total": 1
+  "notifications": [],
+  "total": 20
 }
 ```
 
-## Mark Notification as Read
+---
 
-PATCH /api/v1/notifications/:id/read
+### Mark as Read
+
+**PATCH** `/api/notifications/:id/read`
 
 Response:
+
 ```json
 {
-  "success": true,
-  "message": "Notification marked as read"
+  "success": true
 }
 ```
 
-## Delete Notification
+---
 
-DELETE /api/v1/notifications/:id
+### Delete Notification
+
+**DELETE** `/api/notifications/:id`
 
 Response:
+
 ```json
 {
-  "success": true,
-  "message": "Notification deleted successfully"
+  "success": true
 }
 ```
 
-## WebSocket for Real-Time Updates
+---
 
-Establish connection via WebSocket:
-`ws://localhost:3000/notifications`
+### Real-Time Notifications
 
-On Connection / Subscription:
-Send authorization payload:
+WebSocket Connection:
+
+```
+ws://localhost:3000/notifications
+```
+
+Client sends:
+
 ```json
 {
-  "type": "auth",
   "token": "<token>"
 }
 ```
 
-On New Notification:
-Server pushes message to client:
+Server sends:
+
 ```json
 {
-  "type": "notification",
-  "data": {
-    "id": "notif_001",
-    "title": "Placement Update",
-    "message": "Congratulations!",
-    "type": "Placement",
-    "createdAt": "2026-06-23T10:00:00Z"
-  }
+  "id": "001",
+  "title": "Placement Update",
+  "message": "Congratulations!"
 }
 ```
 
 ---
 
-# Stage 2
+# Stage 2: Database Design
 
-## Database: PostgreSQL
+## Why PostgreSQL?
 
-### Why PostgreSQL
-- **ACID Compliance**: Ensures reliable transactions for critical notifications (e.g., results, placements).
-- **Strong Typing & Schema Integrity**: Prevents malformed logs or missing fields.
-- **Support for Indexes**: Efficient query performance using B-Tree and Hash indexes on foreign keys (`student_id`) and status fields (`is_read`).
-- **Rich Feature Set**: Includes native partitioning, JSONB type support for custom payloads, and robust connection pooling integrations.
+I selected PostgreSQL because:
+
+* Reliable and widely used
+* Supports relationships between tables
+* Good performance for large datasets
+* Easy indexing support
+* Supports JSON data when needed
 
 ---
 
-## Schema & Tables
+## Students Table
 
-### 1. Students Table
-Stores user/student details.
 ```sql
 CREATE TABLE students (
     id VARCHAR(50) PRIMARY KEY,
-    name VARCHAR(100) NOT NULL,
-    email VARCHAR(100) UNIQUE NOT NULL
+    name VARCHAR(100),
+    email VARCHAR(100) UNIQUE
 );
 ```
 
-### 2. Notifications Table
-Stores all notifications and maps them to a student.
+## Notifications Table
+
 ```sql
 CREATE TABLE notifications (
     id VARCHAR(50) PRIMARY KEY,
-    student_id VARCHAR(50) NOT NULL REFERENCES students(id) ON DELETE CASCADE,
-    type VARCHAR(50) NOT NULL,
-    title VARCHAR(200) NOT NULL,
-    message TEXT NOT NULL,
-    is_read BOOLEAN DEFAULT FALSE NOT NULL,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL
+    student_id VARCHAR(50),
+    title VARCHAR(200),
+    message TEXT,
+    type VARCHAR(50),
+    is_read BOOLEAN DEFAULT FALSE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+
+    FOREIGN KEY (student_id)
+    REFERENCES students(id)
 );
+```
 
--- Index for optimized lookup by student and read status
-CREATE INDEX idx_notifications_student_read ON notifications(student_id, is_read);
+Index:
+
+```sql
+CREATE INDEX idx_student_read
+ON notifications(student_id, is_read);
 ```
 
 ---
 
-## Scale & Performance Architecture
+## Basic Queries
 
-### Scaling Challenges
-- **High Read/Write Ratio**: Notifications are written once but read frequently (polling or paginating).
-- **Table Bloat**: As millions of notifications accumulate, queries slow down due to index size exceeding RAM limits.
+Create Notification
 
-### Redis Caching
-- Cache unread notification counts per student in Redis (Key: `unread_count:{student_id}`) for fast badge render times.
-- Cache the first page of notifications (latest 10-20 items) to reduce database load. Invalidated on new notification inserts.
-
-### Partitioning
-- Partition the `notifications` table by **Range** using the `created_at` timestamp (e.g., monthly partitions).
-- This allows dropping/archiving old partitions easily without table locks and keeps index sizes small for active months.
-
----
-
-## SQL Queries
-
-### INSERT (Create Notification)
 ```sql
-INSERT INTO notifications (id, student_id, type, title, message, is_read, created_at)
-VALUES ('notif_001', '123', 'Placement', 'Placement Update', 'Congratulations!', FALSE, NOW());
+INSERT INTO notifications
+VALUES (
+'001',
+'123',
+'Placement Update',
+'Congratulations!',
+'Placement',
+FALSE,
+NOW()
+);
 ```
 
-### SELECT (Get Paginated Notifications for a Student)
+Get Notifications
+
 ```sql
-SELECT n.id, n.type, n.title, n.message, n.is_read, n.created_at, s.name, s.email
-FROM notifications n
-JOIN students s ON n.student_id = s.id
-WHERE n.student_id = '123'
-ORDER BY n.created_at DESC
-LIMIT 10 OFFSET 0;
+SELECT *
+FROM notifications
+WHERE student_id='123'
+ORDER BY created_at DESC
+LIMIT 10;
 ```
 
-### UPDATE (Mark Notification as Read)
+Mark as Read
+
 ```sql
 UPDATE notifications
 SET is_read = TRUE
-WHERE id = 'notif_001' AND student_id = '123';
+WHERE id='001';
 ```
 
-### DELETE (Delete Notification)
+Delete Notification
+
 ```sql
 DELETE FROM notifications
-WHERE id = 'notif_001' AND student_id = '123';
+WHERE id='001';
 ```
 
 ---
 
-# Stage 3 — Query Optimization
+# Stage 3: Query Optimization
 
-## Problem Query Analysis
-The following query is used to retrieve unread notifications for a specific student, sorted by date:
+Problem Query:
 
 ```sql
 SELECT *
 FROM notifications
-WHERE studentID = 1042
-AND isRead = false
-ORDER BY createdAt ASC;
+WHERE student_id = '123'
+AND is_read = FALSE
+ORDER BY created_at;
 ```
 
-### The Bottleneck
-- **Full Table Scan**: Without an appropriate index, PostgreSQL must perform a sequential scan across the entire table to filter by `studentID` and `isRead`.
-- **5 Million Notifications**: Scanning a table of this scale results in high disk I/O, heavy CPU usage, and high latency.
-- **Slow Sorting**: Sorting the filtered results by `createdAt` forces an in-memory or disk-based sort (external merge sort) if the volume of unread notifications is large, further degrading query response times.
+### Issue
 
----
+If millions of records exist, PostgreSQL may take longer to search and sort the data.
 
-## Indexing Solution
-To optimize this, we create a composite index targeting the search criteria and sort order:
+### Solution
+
+Create a composite index:
 
 ```sql
-CREATE INDEX idx_notifications_student_read_created
-ON notifications(studentID, isRead, createdAt);
+CREATE INDEX idx_notification_search
+ON notifications(student_id, is_read, created_at);
 ```
 
-### Why not index every column?
-While indexes speed up lookups, indexing every column is a bad practice due to:
-- **Higher Storage Overhead**: Indexes occupy significant physical disk space, sometimes exceeding the size of the raw table data itself.
-- **Slower INSERTs**: Every new row insertion requires the database engine to recalculate and write entries into every index defined on the table.
-- **Slower UPDATEs**: Modifying a value in an indexed column forces the engine to remove the old index entry and write a new one, causing index fragmentation and page splits.
+Benefits:
+
+* Faster filtering
+* Faster sorting
+* Reduced query execution time
 
 ---
 
-## Placement Notifications (Last 7 Days)
-To query only placement notifications from the last week:
+# Stage 4: Improving Performance
 
-```sql
-SELECT *
-FROM notifications
-WHERE notificationType = 'Placement'
-AND createdAt >= NOW() - INTERVAL '7 days';
+### Redis Cache
+
+Store frequently accessed notification data in Redis.
+
+Flow:
+
 ```
+Frontend
+   ↓
+Redis
+   ↓
+PostgreSQL
+```
+
+If data exists in Redis, return it directly.
+
+Otherwise:
+
+1. Fetch from PostgreSQL
+2. Store in Redis
+3. Return response
 
 ---
 
-# Stage 4 — Performance Improvement
+### Pagination
 
-## Problem: Redundant Database Lookups
-Currently, every page load triggers direct reads to the database. At scale, this results in high database CPU utilization, connection pool exhaustion, and increased read latency for users.
+Instead of loading everything:
+
+```http
+GET /api/notifications?page=1&limit=20
+```
+
+This reduces response size and improves speed.
 
 ---
 
-## Solutions
+### Infinite Scroll
 
-### 1. Redis Cache Layer
-To offload queries from the primary database, a caching layer is introduced. 
+Load first 20 notifications.
 
-```
-Frontend 
-   ↓ 
-Redis Cache (Checks for cached notifications)
-   ↓ (If Cache Miss)
-Database
-```
-
-- **Cache-Aside Pattern**: On notification query, the server first checks Redis. If the data exists (Cache Hit), it returns it immediately. If not (Cache Miss), it fetches from PostgreSQL, populates the Redis cache (with an appropriate TTL like 15 minutes), and returns the payload.
-- **Cache Invalidation**: When a new notification is created for a user, the corresponding cached notifications index in Redis is cleared or appended to keep the client feed synchronized.
-
-### 2. Pagination
-Instead of loading a student's entire notification history, feeds are paginated using limit and offset queries to reduce payload sizes and database read times.
-- **Endpoint Pattern**: `GET /api/v1/notifications?page=1&limit=20`
-
-### 3. Lazy Loading & Infinite Scroll
-- On the frontend client, we only fetch the first 20 records.
-- As the user scrolls near the bottom of the viewport, the next page is requested and appended to the UI state. This prevents loading records that the user may never view.
-
-### 4. Background Refresh & Optimistic UI Updates
-- **Background Refresh**: The frontend queries cached records instantly for immediate rendering, then fetches updates in the background to update the feed without blocking user interactions.
-- **Real-Time Synchronicity**: WebSockets push new notifications directly to the browser. Instead of reloading the page or making a full REST API call, the new item is pushed onto the active frontend list state.
+When the user scrolls down, fetch the next set automatically.
 
 ---
 
-# Stage 5 — Asynchronous Processing & Fault Tolerance
+### WebSockets
 
-## Shortcomings of Current Implementation
-The current implementation processes notifications sequentially:
+New notifications are pushed instantly without refreshing the page.
+
+---
+
+# Stage 5: Handling Large Notification Traffic
+
+Current Approach
 
 ```python
-for student_id in student_ids:
-    send_email(student_id, message)
-    save_to_db(student_id, message)
-    push_to_app(student_id, message)
+for student in students:
+    send_email(student)
+    save_notification(student)
 ```
 
-### Issues:
-1. **Single Point of Failure**: If `send_email()` fails or throws an exception, the entire loop terminates, halting delivery for remaining students.
-2. **No Retry Logic**: Transient network or SMTP errors result in permanent notification delivery loss.
+Problem:
 
+* Slow processing
+* One failure can affect others
 
 ---
 
-## Proposed Solution: Queue-Based Architecture
-To decouple components, notifications are offloaded to an asynchronous message queue (e.g., RabbitMQ or Redis BullMQ).
+### Better Approach
+
+Use a queue.
+
+Flow:
 
 ```
-HR 
- ↓ 
-Notification API 
- ↓ 
-Message Queue 
- ↓ 
-Worker Service 
- ├── Save Notification to DB 
- ├── Send Email 
- └── Send In-App Notification (WebSocket)
+Admin
+  ↓
+Notification API
+  ↓
+Queue
+  ↓
+Worker
+   ├── Save to Database
+   ├── Send Email
+   └── Send WebSocket Notification
 ```
 
----
+### Queue Example
 
-
-
-## Revised Pseudocode
-
-### Enqueue Process
 ```python
-for student_id in student_ids:
-    add_to_queue(student_id, message)
+for student in students:
+    add_to_queue(student, message)
 ```
 
+Worker:
 
+```python
+while queue_has_items():
+    notification = get_next_item()
+
+    save_to_database(notification)
+    send_email(notification)
+    send_realtime_notification(notification)
+```
+
+### Advantages
+
+* Faster processing
+* Retry failed jobs
+* Better scalability
+* Handles large number of users efficiently
