@@ -113,6 +113,16 @@ Server pushes message to client:
 
 ## Database: PostgreSQL
 
+### Why PostgreSQL
+- **ACID Compliance**: Ensures reliable transactions for critical notifications (e.g., results, placements).
+- **Strong Typing & Schema Integrity**: Prevents malformed logs or missing fields.
+- **Support for Indexes**: Efficient query performance using B-Tree and Hash indexes on foreign keys (`student_id`) and status fields (`is_read`).
+- **Rich Feature Set**: Includes native partitioning, JSONB type support for custom payloads, and robust connection pooling integrations.
+
+---
+
+## Schema & Tables
+
 ### 1. Students Table
 Stores user/student details.
 ```sql
@@ -142,7 +152,21 @@ CREATE INDEX idx_notifications_student_read ON notifications(student_id, is_read
 
 ---
 
+## Scale & Performance Architecture
 
+### Scaling Challenges
+- **High Read/Write Ratio**: Notifications are written once but read frequently (polling or paginating).
+- **Table Bloat**: As millions of notifications accumulate, queries slow down due to index size exceeding RAM limits.
+
+### Redis Caching
+- Cache unread notification counts per student in Redis (Key: `unread_count:{student_id}`) for fast badge render times.
+- Cache the first page of notifications (latest 10-20 items) to reduce database load. Invalidated on new notification inserts.
+
+### Partitioning
+- Partition the `notifications` table by **Range** using the `created_at` timestamp (e.g., monthly partitions).
+- This allows dropping/archiving old partitions easily without table locks and keeps index sizes small for active months.
+
+---
 
 ## SQL Queries
 
@@ -152,7 +176,7 @@ INSERT INTO notifications (id, student_id, type, title, message, is_read, create
 VALUES ('notif_001', '123', 'Placement', 'Placement Update', 'Congratulations!', FALSE, NOW());
 ```
 
-### SELECT 
+### SELECT (Get Paginated Notifications for a Student)
 ```sql
 SELECT n.id, n.type, n.title, n.message, n.is_read, n.created_at, s.name, s.email
 FROM notifications n
@@ -173,4 +197,41 @@ WHERE id = 'notif_001' AND student_id = '123';
 ```sql
 DELETE FROM notifications
 WHERE id = 'notif_001' AND student_id = '123';
+```
+
+---
+
+# Stage 3 — Query Optimization
+
+## Problem Query Analysis
+The following query is used to retrieve unread notifications for a specific student, sorted by date:
+
+```sql
+SELECT *
+FROM notifications
+WHERE studentID = 1042
+AND isRead = false
+ORDER BY createdAt ASC;
+```
+
+
+---
+
+## Indexing Solution
+To optimize this, we create a composite index targeting the search criteria and sort order:
+
+```sql
+CREATE INDEX idx_notifications_student_read_created
+ON notifications(studentID, isRead, createdAt);
+```
+
+
+## Placement Notifications (Last 7 Days)
+To query only placement notifications from the last week:
+
+```sql
+SELECT *
+FROM notifications
+WHERE notificationType = 'Placement'
+AND createdAt >= NOW() - INTERVAL '7 days';
 ```
